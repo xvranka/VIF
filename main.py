@@ -1,8 +1,8 @@
 import csv
 import logging
+import re
 import time
 from pathlib import Path
-from html.parser import HTMLParser
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import requests
@@ -11,22 +11,11 @@ import config
 
 log = logging.getLogger(__name__)
 
-class _LinkParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.links = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "a":
-            href = dict(attrs).get("href")
-            if href:
-                self.links.append(href)
-
 def fetchURLs(file_path, base_url):
-    parser = _LinkParser()
-    parser.feed(Path(file_path).read_text(encoding="utf-8"))
+    html = Path(file_path).read_text(encoding="utf-8")
     urls = []
-    for href in parser.links:
+    for match in re.finditer(config.URL_REGEX, html, re.IGNORECASE):
+        href = match.group(1) if match.groups() else match.group(0)
         url, _ = urldefrag(urljoin(base_url, href.strip()))
         if urlparse(url).scheme in ("http", "https") and url not in urls:
             urls.append(url)
@@ -42,7 +31,7 @@ def scrapeSite(url, out_dir="data"):
     if Path(out_dir).resolve() not in target.resolve().parents:
         raise ValueError(f"unsafe path in url: {url}")
     log.info("scraping %s", url)
-    response = requests.get(url, timeout=10)
+    response = requests.get(url, headers=config.HEADERS, timeout=10)
     response.raise_for_status()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(response.text, encoding="utf-8")
